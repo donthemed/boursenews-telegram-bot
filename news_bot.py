@@ -194,7 +194,7 @@ def summarize_articles_with_gemini(articles, api_key=GEMINI_API_KEY):
 تنسيق الإجابة لكل مقال:
 [الرمز التعبيري] **عنوان قصير (50 حرف كحد أقصى)**
 تحليل أصلي في جملتين كحد أقصى.
-📰 [المصدر](الرابط)
+📰
 
 ابدأ مباشرة بالمقالات، بدون مقدمة."""
 
@@ -223,22 +223,52 @@ def summarize_articles_with_gemini(articles, api_key=GEMINI_API_KEY):
             print("❌ No candidates in Gemini response")
             return format_articles_fallback(articles)
             
-        return result["candidates"][0]["content"]["parts"][0]["text"]
+        # Add RTL formatting and links to the generated content
+        gemini_content = result["candidates"][0]["content"]["parts"][0]["text"]
+        
+        # Add links back to articles (Gemini doesn't include them)
+        formatted_content = ""
+        lines = gemini_content.split('\n')
+        article_index = 0
+        
+        for line in lines:
+            if line.strip().startswith('🚨') or line.strip().startswith('📈') or line.strip().startswith('📊'):
+                # This is a title line with emoji, add RTL formatting and link
+                formatted_content += f"‏{line}\n"
+                if article_index < len(articles):
+                    formatted_content += f"📰 [المصدر]({articles[article_index]['link']})\n"
+                    article_index += 1
+            elif line.strip().startswith('**') and article_index < len(articles):
+                # This is a title line without emoji, add RTL formatting and link
+                formatted_content += f"‏{line}\n"
+                formatted_content += f"📰 [المصدر]({articles[article_index]['link']})\n"
+                article_index += 1
+            elif line.strip() and not line.strip().startswith('📰'):
+                # This is content, add RTL formatting
+                formatted_content += f"‏{line}\n"
+            elif line.strip() == '📰':
+                # Skip standalone newspaper emoji
+                continue
+            else:
+                formatted_content += f"{line}\n"
+        
+        return formatted_content
         
     except Exception as e:
         print(f"❌ Gemini error: {e}")
         return format_articles_fallback(articles)
 
 def format_articles_fallback(articles):
-    """Fallback formatting if Gemini fails - in Arabic"""
+    """Fallback formatting if Gemini fails - in Arabic with RTL"""
     if not articles:
         return "📭 لا توجد أخبار متعلقة ببورصة الدار البيضاء اليوم."
     
-    formatted = f"📈 *بورصة الدار البيضاء - {len(articles)} أخبار اليوم*\n\n"
+    formatted = f"‏📈 *بورصة الدار البيضاء - {len(articles)} أخبار اليوم*\n\n"
     
     for article in articles:
-        formatted += f"{article['importance']['emoji']} **{article['title'][:70]}{'...' if len(article['title']) > 70 else ''}**\n"
-        formatted += f"شركة مدرجة في البورصة مع تأثير محتمل على الأسعار.\n"
+        title = article['title'][:70] + ('...' if len(article['title']) > 70 else '')
+        formatted += f"‏{article['importance']['emoji']} **{title}**\n"
+        formatted += f"‏شركة مدرجة في البورصة مع تأثير محتمل على الأسعار.\n"
         formatted += f"📰 [المصدر]({article['link']})\n\n"
     
     return formatted
@@ -249,7 +279,7 @@ def send_to_telegram(text):
         "chat_id": CHAT_ID,
         "text": text,
         "parse_mode": "Markdown",  # Enable markdown for formatting
-        "disable_web_page_preview": False  # Show link previews
+        "disable_web_page_preview": True  # This removes the big photo preview
     }
     
     try:
@@ -283,9 +313,9 @@ if __name__ == "__main__":
             # Create enhanced Arabic summary with Gemini
             summary = summarize_articles_with_gemini(articles)
             
-            # Add header only (no footer)
+            # Add header only (no footer) with RTL formatting
             today = datetime.now().strftime("%d %B %Y")
-            final_message = f"🏛️ **بورصة الدار البيضاء** - {today}\n\n{summary}"
+            final_message = f"‏🏛️ **بورصة الدار البيضاء** - {today}\n\n{summary}"
             
             # Send to Telegram
             success = send_to_telegram(final_message)
@@ -306,6 +336,6 @@ if __name__ == "__main__":
                 print("❌ Failed to send message")
             
     except Exception as e:
-        error_message = f"❌ خطأ في البوت: {str(e)}"
+        error_message = f"‏❌ خطأ في البوت: {str(e)}"
         print(error_message)
         send_to_telegram(error_message) 
