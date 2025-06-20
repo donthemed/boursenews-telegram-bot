@@ -53,7 +53,7 @@ def get_today_articles():
     return "\n\n".join(articles) if articles else "📭 Aucun article pertinent pour aujourd'hui."
 
 def summarize_with_gemini(prompt, api_key=GEMINI_API_KEY):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     data = {
         "contents": [
