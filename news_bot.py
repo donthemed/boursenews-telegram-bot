@@ -168,35 +168,35 @@ def get_article_importance(title, content):
     return {'level': 1, 'emoji': '📊', 'label': 'Standard', 'matched': 'général'}
 
 def summarize_articles_with_gemini(articles, api_key=GEMINI_API_KEY):
-    """Create ORIGINAL summaries for stock market articles to avoid copyright"""
+    """Create ORIGINAL Arabic summaries for stock market articles"""
     if not articles:
-        return "📭 Aucun article lié à la Bourse de Casablanca aujourd'hui."
+        return "📭 لا توجد أخبار متعلقة ببورصة الدار البيضاء اليوم."
     
     # Prepare articles for Gemini
     articles_text = []
     for i, article in enumerate(articles, 1):
-        articles_text.append(f"{i}. {article['title']}\nLien: {article['link']}")
+        articles_text.append(f"{i}. {article['title']}\nالرابط: {article['link']}")
     
-    prompt = f"""Tu es un analyste financier expert de la Bourse de Casablanca. Voici {len(articles)} articles strictement liés à la bourse aujourd'hui:
+    prompt = f"""أنت محلل مالي خبير في بورصة الدار البيضاء. إليك {len(articles)} مقال متعلق بالبورصة اليوم:
 
 {chr(10).join(articles_text)}
 
-INSTRUCTIONS STRICTES:
-1. Génère un résumé ORIGINAL et UNIQUE pour chaque article (PAS de paraphrase)
-2. Focus UNIQUEMENT sur l'impact boursier et les investissements
-3. Maximum 2 phrases courtes par article
-4. Utilise tes connaissances financières pour analyser l'impact potentiel
-5. Mentionne l'impact probable sur le cours de l'action ou l'indice
-6. Évite de copier le contenu - crée une analyse originale
-7. Ordonne par importance décroissante
-8. Sois concis et informatif
+التعليمات الصارمة:
+1. اكتب ملخصاً أصلياً وفريداً لكل مقال باللغة العربية (ليس إعادة صياغة)
+2. ركز فقط على التأثير على البورصة والاستثمارات
+3. جملتان قصيرتان كحد أقصى لكل مقال
+4. استخدم معرفتك المالية لتحليل التأثير المحتمل
+5. اذكر التأثير المحتمل على سعر السهم أو المؤشر
+6. تجنب نسخ المحتوى - أنشئ تحليلاً أصلياً
+7. رتب حسب الأهمية (الأكثر أهمية أولاً)
+8. كن مختصراً ومفيداً
 
-Format de réponse pour chaque article:
-[Emoji] **Titre court (max 50 caractères)**
-Analyse originale en 2 phrases max.
-📰 [Source](lien)
+تنسيق الإجابة لكل مقال:
+[الرمز التعبيري] **عنوان قصير (50 حرف كحد أقصى)**
+تحليل أصلي في جملتين كحد أقصى.
+📰 [المصدر](الرابط)
 
-Commence directement par les articles, sans introduction."""
+ابدأ مباشرة بالمقالات، بدون مقدمة."""
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
@@ -230,16 +230,16 @@ Commence directement par les articles, sans introduction."""
         return format_articles_fallback(articles)
 
 def format_articles_fallback(articles):
-    """Fallback formatting if Gemini fails"""
+    """Fallback formatting if Gemini fails - in Arabic"""
     if not articles:
-        return "📭 Aucun article lié à la Bourse de Casablanca aujourd'hui."
+        return "📭 لا توجد أخبار متعلقة ببورصة الدار البيضاء اليوم."
     
-    formatted = f"📈 *Bourse de Casablanca - {len(articles)} articles du jour*\n\n"
+    formatted = f"📈 *بورصة الدار البيضاء - {len(articles)} أخبار اليوم*\n\n"
     
     for article in articles:
         formatted += f"{article['importance']['emoji']} **{article['title'][:70]}{'...' if len(article['title']) > 70 else ''}**\n"
-        formatted += f"Société cotée en bourse avec impact potentiel sur les cours.\n"
-        formatted += f"📰 [Source]({article['link']})\n\n"
+        formatted += f"شركة مدرجة في البورصة مع تأثير محتمل على الأسعار.\n"
+        formatted += f"📰 [المصدر]({article['link']})\n\n"
     
     return formatted
 
@@ -274,24 +274,24 @@ if __name__ == "__main__":
         articles = get_today_articles()
         
         if not articles:
-            message = "📭 Aucun article strictement lié à la Bourse de Casablanca aujourd'hui."
+            message = "📭 لا توجد أخبار متعلقة ببورصة الدار البيضاء اليوم."
             send_to_telegram(message)
             print("📭 No strict stock market articles found for today")
         else:
             print(f"\n📈 Processing {len(articles)} strict stock market articles...")
             
-            # Create enhanced summary with Gemini (original content)
+            # Create enhanced Arabic summary with Gemini
             summary = summarize_articles_with_gemini(articles)
             
-            # Add header and footer
+            # Add header only (no footer)
             today = datetime.now().strftime("%d %B %Y")
-            enhanced_message = f"🏛️ **Bourse de Casablanca** - {today}\n\n{summary}\n\n📱 _Analyse automatique par CasaBourse Bot_"
+            final_message = f"🏛️ **بورصة الدار البيضاء** - {today}\n\n{summary}"
             
             # Send to Telegram
-            success = send_to_telegram(enhanced_message)
+            success = send_to_telegram(final_message)
             
             if success:
-                print("✅ Strict stock market summary sent successfully!")
+                print("✅ Arabic stock market summary sent successfully!")
                 print(f"📊 Summary included {len(articles)} articles")
                 
                 # Show importance breakdown
@@ -306,6 +306,6 @@ if __name__ == "__main__":
                 print("❌ Failed to send message")
             
     except Exception as e:
-        error_message = f"❌ Erreur dans le bot: {str(e)}"
+        error_message = f"❌ خطأ في البوت: {str(e)}"
         print(error_message)
         send_to_telegram(error_message) 
