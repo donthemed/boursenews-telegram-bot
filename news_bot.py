@@ -39,31 +39,25 @@ def get_today_articles():
     return "\n\n".join(articles) if articles else "Pas d'articles pertinents aujourd'hui."
 
 
-def summarize_with_gemini(text):
-    import requests
-    import os
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {GEMINI_API_KEY}"
+def summarize_with_gemini(prompt, api_key):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
     }
-    payload = {
-        "contents": [{
-            "parts": [{
-                "text": f"Résume les actualités suivantes en 3 lignes max en français:\n\n{text}"
-            }]
-        }]
-    }
-    r = requests.post(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
-        headers=headers,
-        json=payload
-    )
 
-    print("FULL GEMINI RESPONSE:", r.status_code, r.text)
-
-    response = r.json()
-    return response["candidates"][0]["content"]["parts"][0]["text"]
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code != 200:
+        print("FULL GEMINI RESPONSE:", response.text)
+        raise Exception(f"GEMINI API error: {response.status_code}")
+    
+    return response.json()["candidates"][0]["content"]["parts"][0]["text"]
 
 
 def send_to_telegram(text):
