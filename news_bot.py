@@ -3,16 +3,23 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import os
-import json
-import locale
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+french_months = {
+    "01": "janvier", "02": "février", "03": "mars", "04": "avril",
+    "05": "mai", "06": "juin", "07": "juillet", "08": "août",
+    "09": "septembre", "10": "octobre", "11": "novembre", "12": "décembre"
+}
+
 def get_today_articles():
-    locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
-    today_str = datetime.now().strftime("%A %d %B %Y").replace(" 0", " ").strip()
+    now = datetime.now()
+    day = str(now.day)
+    month = french_months[now.strftime("%m")]
+    year = str(now.year)
+    today_str = f"{day} {month} {year}"
 
     urls = [
         "https://boursenews.ma/articles/actualite",
@@ -40,7 +47,7 @@ def get_today_articles():
                 full_link = link if link.startswith("http") else "https://boursenews.ma" + link
                 date = span.get_text(strip=True).split("-")[0].strip()
 
-                if any(part in date for part in today_str.split()):
+                if all(part.lower() in date.lower() for part in [day, month]):
                     articles.append(f"- {title}\n{full_link}")
 
     return "\n\n".join(articles) if articles else "📭 Aucun article pertinent pour aujourd'hui."
