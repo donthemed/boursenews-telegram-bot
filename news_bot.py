@@ -40,17 +40,30 @@ def get_today_articles():
 
 
 def summarize_with_gemini(text):
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
-    headers = {"Content-Type": "application/json"}
+    import requests
+    import os
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {GEMINI_API_KEY}"
+    }
     payload = {
         "contents": [{
             "parts": [{
-                "text": f"Voici les articles extraits aujourd’hui de boursenews.ma :\n\n{text}\n\nRésume uniquement ceux qui sont pertinents pour un investisseur marocain en bourse. Ne parle pas des articles inutiles. Écris en français. Garde un ton informatif et court."
+                "text": f"Résume les actualités suivantes en 3 lignes max en français:\n\n{text}"
             }]
         }]
     }
-    response = requests.post(f"{url}?key={GEMINI_API_KEY}", headers=headers, data=json.dumps(payload))
-    return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+    r = requests.post(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+        headers=headers,
+        json=payload
+    )
+
+    print("FULL GEMINI RESPONSE:", r.status_code, r.text)
+
+    response = r.json()
+    return response["candidates"][0]["content"]["parts"][0]["text"]
 
 
 def send_to_telegram(text):
