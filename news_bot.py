@@ -3,12 +3,10 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import os
-import json
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
 
 def get_today_articles():
     url = "https://boursenews.ma/articles/actualite"
@@ -46,7 +44,7 @@ def summarize_with_gemini(prompt, api_key):
         "contents": [
             {
                 "parts": [
-                    {"text": prompt}
+                    {"text": "Résume en français les nouvelles suivantes pour un investisseur marocain:\n\n" + prompt}
                 ]
             }
         ]
@@ -56,7 +54,7 @@ def summarize_with_gemini(prompt, api_key):
     if response.status_code != 200:
         print("FULL GEMINI RESPONSE:", response.text)
         raise Exception(f"GEMINI API error: {response.status_code}")
-    
+
     return response.json()["candidates"][0]["content"]["parts"][0]["text"]
 
 
@@ -71,5 +69,8 @@ def send_to_telegram(text):
 
 if __name__ == "__main__":
     raw = get_today_articles()
-    summary = summarize_with_gemini(raw)
-    send_to_telegram(summary)
+    if "Pas d'articles pertinents" in raw:
+        send_to_telegram("📭 Aucun article pertinent pour aujourd'hui.")
+    else:
+        summary = summarize_with_gemini(raw, GEMINI_API_KEY)
+        send_to_telegram("📰 *Résumé des nouvelles boursières du jour:*\n\n" + summary)
