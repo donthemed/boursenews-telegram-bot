@@ -56,8 +56,19 @@ def get_today_articles():
 
     urls = [
         "https://boursenews.ma/articles/actualite",
-        "https://boursenews.ma/articles/marches"
+        "https://boursenews.ma/articles/marches",
+        "https://medias24.com/categorie/leboursier/actus/"
     ]
+    
+    # Headers to avoid being blocked
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+    }
     
     all_articles = []
     print(f"🔍 Looking for STRICT Casablanca stock market & IPO articles...")
@@ -67,13 +78,37 @@ def get_today_articles():
         
         for page in range(1, 3):  # Check first 2 pages
             try:
-                url = base_url + (f"/{page}" if page > 1 else "")
-                response = requests.get(url, timeout=10)
-                if response.status_code != 200:
+                if "medias24.com" in base_url:
+                    # Different pagination for medias24
+                    url = base_url + (f"?page={page}" if page > 1 else "")
+                else:
+                    url = base_url + (f"/{page}" if page > 1 else "")
+                
+                response = requests.get(url, headers=headers, timeout=10)
+                
+                if response.status_code == 403:
+                    print(f"    ⚠️  Access blocked (403) - website may have anti-bot protection")
+                    break
+                elif response.status_code != 200:
+                    print(f"    ❌ HTTP {response.status_code}")
                     break
                     
                 soup = BeautifulSoup(response.text, "html.parser")
-                h3_tags = soup.find_all("h3")
+                
+                # Different selectors for different websites
+                if "medias24.com" in base_url:
+                    # Medias24 uses different HTML structure
+                    articles_elements = soup.find_all("article") or soup.find_all("div", class_="article")
+                    if not articles_elements:
+                        h3_tags = soup.find_all("h3")
+                    else:
+                        h3_tags = []
+                        for article_elem in articles_elements:
+                            h3 = article_elem.find("h3") or article_elem.find("h2") or article_elem.find("h1")
+                            if h3:
+                                h3_tags.append(h3)
+                else:
+                    h3_tags = soup.find_all("h3")
                 
                 page_articles_found = 0
                 for h3 in h3_tags:
@@ -84,7 +119,14 @@ def get_today_articles():
                     
                     title = a.get_text(strip=True)
                     link = a["href"]
-                    full_link = link if link.startswith("http") else "https://boursenews.ma" + link
+                    
+                    # Fix link format for different websites
+                    if link.startswith("http"):
+                        full_link = link
+                    elif "medias24.com" in base_url:
+                        full_link = "https://medias24.com" + link
+                    else:
+                        full_link = "https://boursenews.ma" + link
                     
                     # Check if today's date
                     date_found = any(pattern in full_text for pattern in date_patterns)
@@ -100,12 +142,14 @@ def get_today_articles():
                             'full_text': full_text,
                             'importance': importance,
                             'match_reason': match_reason,
-                            'section': base_url.split('/')[-1]
+                            'section': base_url.split('/')[-1],
+                            'source': 'Medias24' if 'medias24.com' in base_url else 'BourseNews'
                         }
                         all_articles.append(article_info)
                         page_articles_found += 1
                         print(f"      {importance['emoji']} Found: {title[:60]}...")
                         print(f"         📍 Reason: {match_reason}")
+                        print(f"         🌐 Source: {article_info['source']}")
                 
                 print(f"    Page {page}: Found {page_articles_found} strict stock market articles")
                 
@@ -172,10 +216,10 @@ def summarize_articles_with_gemini(articles, api_key=GEMINI_API_KEY):
     if not articles:
         return "📭 لا توجد أخبار متعلقة ببورصة الدار البيضاء اليوم."
     
-    # Prepare articles for Gemini
+    # Prepare articles for Gemini with source info
     articles_text = []
     for i, article in enumerate(articles, 1):
-        articles_text.append(f"{i}. {article['title']}\nالرابط: {article['link']}")
+        articles_text.append(f"{i}. {article['title']}\nالمصدر: {article['source']}\nالرابط: {article['link']}")
     
     prompt = f"""أنت محلل مالي خبير في بورصة الدار البيضاء. إليك {len(articles)} مقال متعلق بالبورصة اليوم:
 
@@ -190,11 +234,11 @@ def summarize_articles_with_gemini(articles, api_key=GEMINI_API_KEY):
 6. تجنب نسخ المحتوى - أنشئ تحليلاً أصلياً
 7. رتب حسب الأهمية (الأكثر أهمية أولاً)
 8. كن مختصراً ومفيداً
+9. لا تضع روابط في الملخص - سيتم إضافتها تلقائياً
 
 تنسيق الإجابة لكل مقال:
 [الرمز التعبيري] **عنوان قصير (50 حرف كحد أقصى)**
 تحليل أصلي في جملتين كحد أقصى.
-📰
 
 ابدأ مباشرة بالمقالات، بدون مقدمة."""
 
@@ -226,31 +270,53 @@ def summarize_articles_with_gemini(articles, api_key=GEMINI_API_KEY):
         # Add RTL formatting and links to the generated content
         gemini_content = result["candidates"][0]["content"]["parts"][0]["text"]
         
-        # Add links back to articles (Gemini doesn't include them)
+        # Process the content and add sources at the end of each summary
         formatted_content = ""
         lines = gemini_content.split('\n')
         article_index = 0
+        current_summary = []
         
         for line in lines:
-            if line.strip().startswith('🚨') or line.strip().startswith('📈') or line.strip().startswith('📊'):
-                # This is a title line with emoji, add RTL formatting and link
-                formatted_content += f"‏{line}\n"
-                if article_index < len(articles):
-                    formatted_content += f"📰 [المصدر]({articles[article_index]['link']})\n"
-                    article_index += 1
-            elif line.strip().startswith('**') and article_index < len(articles):
-                # This is a title line without emoji, add RTL formatting and link
-                formatted_content += f"‏{line}\n"
-                formatted_content += f"📰 [المصدر]({articles[article_index]['link']})\n"
-                article_index += 1
-            elif line.strip() and not line.strip().startswith('📰'):
-                # This is content, add RTL formatting
-                formatted_content += f"‏{line}\n"
-            elif line.strip() == '📰':
-                # Skip standalone newspaper emoji
+            line = line.strip()
+            if not line:
                 continue
+                
+            if (line.startswith('🚨') or line.startswith('📈') or line.startswith('📊')) and '**' in line:
+                # This is a title line with emoji
+                if current_summary and article_index > 0:
+                    # Finish previous article
+                    summary_text = ' '.join(current_summary)
+                    if not summary_text.endswith('.'):
+                        summary_text += '.'
+                    formatted_content += f"‏{summary_text} 📰 [المصدر]({articles[article_index-1]['link']})\n\n"
+                    current_summary = []
+                
+                # Start new article
+                formatted_content += f"‏{line}\n"
+                article_index += 1
+            elif line.startswith('**') and line.endswith('**'):
+                # This is a title line without emoji
+                if current_summary and article_index > 0:
+                    # Finish previous article
+                    summary_text = ' '.join(current_summary)
+                    if not summary_text.endswith('.'):
+                        summary_text += '.'
+                    formatted_content += f"‏{summary_text} 📰 [المصدر]({articles[article_index-1]['link']})\n\n"
+                    current_summary = []
+                
+                # Start new article
+                formatted_content += f"‏{line}\n"
+                article_index += 1
             else:
-                formatted_content += f"{line}\n"
+                # This is content
+                current_summary.append(line)
+        
+        # Don't forget the last article
+        if current_summary and article_index > 0:
+            summary_text = ' '.join(current_summary)
+            if not summary_text.endswith('.'):
+                summary_text += '.'
+            formatted_content += f"‏{summary_text} 📰 [المصدر]({articles[article_index-1]['link']})\n\n"
         
         return formatted_content
         
@@ -268,8 +334,7 @@ def format_articles_fallback(articles):
     for article in articles:
         title = article['title'][:70] + ('...' if len(article['title']) > 70 else '')
         formatted += f"‏{article['importance']['emoji']} **{title}**\n"
-        formatted += f"‏شركة مدرجة في البورصة مع تأثير محتمل على الأسعار.\n"
-        formatted += f"📰 [المصدر]({article['link']})\n\n"
+        formatted += f"‏شركة مدرجة في البورصة مع تأثير محتمل على الأسعار. 📰 [المصدر]({article['link']})\n\n"
     
     return formatted
 
