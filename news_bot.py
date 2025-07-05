@@ -1,8 +1,16 @@
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import re
+import time
+
+# Try to import cloudscraper for medias24.com access
+try:
+    import cloudscraper
+    CLOUDSCRAPER_AVAILABLE = True
+except ImportError:
+    CLOUDSCRAPER_AVAILABLE = False
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -43,16 +51,44 @@ HIGH_IMPORTANCE_KEYWORDS = [
 
 def get_today_articles():
     now = datetime.now()
-    day = str(now.day)
-    month = french_months[now.strftime("%m")]
-    year = str(now.year)
     
-    date_patterns = [
-        f"{day} {month} {year}",
-        f"{day} {month.capitalize()} {year}",
-        f"Vendredi {day} {month} {year}",
-        f"Vendredi {day} {month.capitalize()} {year}",
-    ]
+    # Generate date patterns for the last 24 hours only (today and yesterday)
+    date_patterns = []
+    for days_back in range(2):  # Today and yesterday only (last 24 hours)
+        target_date = now - timedelta(days=days_back)
+        day = str(target_date.day)
+        month = french_months[target_date.strftime("%m")]
+        year = str(target_date.year)
+        
+        # Add various date format patterns
+        date_patterns.extend([
+            f"{day} {month} {year}",
+            f"{day} {month.capitalize()} {year}",
+            f"Lundi {day} {month} {year}",
+            f"Mardi {day} {month} {year}",
+            f"Mercredi {day} {month} {year}",
+            f"Jeudi {day} {month} {year}",
+            f"Vendredi {day} {month} {year}",
+            f"Samedi {day} {month} {year}",
+            f"Dimanche {day} {month} {year}",
+            f"Lundi {day} {month.capitalize()} {year}",
+            f"Mardi {day} {month.capitalize()} {year}",
+            f"Mercredi {day} {month.capitalize()} {year}",
+            f"Jeudi {day} {month.capitalize()} {year}",
+            f"Vendredi {day} {month.capitalize()} {year}",
+            f"Samedi {day} {month.capitalize()} {year}",
+            f"Dimanche {day} {month.capitalize()} {year}",
+        ])
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_patterns = []
+    for pattern in date_patterns:
+        if pattern not in seen:
+            seen.add(pattern)
+            unique_patterns.append(pattern)
+    
+    date_patterns = unique_patterns
 
     urls = [
         "https://boursenews.ma/articles/actualite",
@@ -60,21 +96,37 @@ def get_today_articles():
         "https://medias24.com/categorie/leboursier/actus/"
     ]
     
-    # Headers to avoid being blocked
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-    }
+    # Improved headers to avoid being blocked, especially for medias24
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    ]
     
     all_articles = []
-    print(f"🔍 Looking for STRICT Casablanca stock market & IPO articles...")
+    print(f"🔍 Looking for STRICT Casablanca stock market & IPO articles from last 24 hours...")
+    print(f"📅 Date patterns: {len(date_patterns)} patterns for last 24 hours")
 
     for base_url in urls:
         print(f"\n📊 Checking: {base_url}")
+        
+        # Use cloudscraper for medias24.com, regular requests for others
+        if "medias24.com" in base_url:
+            if not CLOUDSCRAPER_AVAILABLE:
+                print(f"    ⚠️  CloudScraper not available for medias24.com - skipping")
+                continue
+            # Will use cloudscraper instead of headers
+            use_cloudscraper = True
+        else:
+            use_cloudscraper = False
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            }
         
         for page in range(1, 3):  # Check first 2 pages
             try:
@@ -84,29 +136,62 @@ def get_today_articles():
                 else:
                     url = base_url + (f"/{page}" if page > 1 else "")
                 
-                response = requests.get(url, headers=headers, timeout=10)
+                # Use cloudscraper for medias24.com, regular requests for others
+                if use_cloudscraper:
+                    scraper = cloudscraper.create_scraper()
+                    response = scraper.get(url, timeout=30)
+                    print(f"    🔧 Using CloudScraper for medias24.com")
+                else:
+                    response = requests.get(url, headers=headers, timeout=15)
                 
-                if response.status_code == 403:
-                    print(f"    ⚠️  Access blocked (403) - website may have anti-bot protection")
-                    break
+                if response.status_code == 403 and not use_cloudscraper:
+                    print(f"    ⚠️  Access blocked (403) - trying alternative approach...")
+                    # Try with different user agent
+                    headers['User-Agent'] = user_agents[1]
+                    response = requests.get(url, headers=headers, timeout=15)
+                    if response.status_code == 403:
+                        print(f"    ❌ Still blocked - website has strong anti-bot protection")
+                        break
                 elif response.status_code != 200:
                     print(f"    ❌ HTTP {response.status_code}")
+                    if use_cloudscraper:
+                        print(f"    ⚠️  CloudScraper failed - medias24.com has additional protection")
                     break
                     
                 soup = BeautifulSoup(response.text, "html.parser")
                 
                 # Different selectors for different websites
                 if "medias24.com" in base_url:
-                    # Medias24 uses different HTML structure
-                    articles_elements = soup.find_all("article") or soup.find_all("div", class_="article")
-                    if not articles_elements:
-                        h3_tags = soup.find_all("h3")
-                    else:
-                        h3_tags = []
-                        for article_elem in articles_elements:
-                            h3 = article_elem.find("h3") or article_elem.find("h2") or article_elem.find("h1")
-                            if h3:
-                                h3_tags.append(h3)
+                    # Medias24 uses different HTML structure - try multiple selectors
+                    h3_tags = []
+                    
+                    # Add a small delay to allow dynamic content loading
+                    time.sleep(2)
+                    
+                    # Try various selectors for medias24
+                    selectors = [
+                        "article h3", "article h2", "div.article h3", "div.article h2",
+                        ".post-title h3", ".post-title h2", ".entry-title", 
+                        ".article-title", "h3", "h2", "h1"  # fallback
+                    ]
+                    
+                    for selector in selectors:
+                        elements = soup.select(selector)
+                        if elements:
+                            # Filter out loading messages
+                            valid_elements = []
+                            for element in elements:
+                                text = element.get_text(strip=True)
+                                if text and "chargement" not in text.lower() and len(text) > 10:
+                                    valid_elements.append(element)
+                            
+                            if valid_elements:
+                                h3_tags = valid_elements
+                                print(f"    📍 Using selector: {selector} (found {len(valid_elements)} valid elements)")
+                                break
+                    
+                    if not h3_tags:
+                        print(f"    ⚠️  No valid content found - medias24.com may be loading dynamically")
                 else:
                     h3_tags = soup.find_all("h3")
                 
@@ -115,10 +200,18 @@ def get_today_articles():
                     full_text = h3.get_text(strip=True)
                     a = h3.find("a")
                     if not a:
-                        continue
+                        # Sometimes the link is in parent or sibling elements
+                        parent = h3.find_parent("a")
+                        if parent:
+                            a = parent
+                        else:
+                            continue
                     
                     title = a.get_text(strip=True)
-                    link = a["href"]
+                    link = a.get("href", "")
+                    
+                    if not link:
+                        continue
                     
                     # Fix link format for different websites
                     if link.startswith("http"):
@@ -128,10 +221,10 @@ def get_today_articles():
                     else:
                         full_link = "https://boursenews.ma" + link
                     
-                    # Check if today's date
+                    # Check if recent date (last 24 hours)
                     date_found = any(pattern in full_text for pattern in date_patterns)
                     
-                    # STRICT check - only direct stock market relevance
+                    # STRICT check - only direct stock market relevance (works for both sites)
                     is_stock_related, match_reason = is_strict_stock_market_related(title, full_text)
                     
                     if date_found and is_stock_related:
@@ -212,35 +305,51 @@ def get_article_importance(title, content):
     return {'level': 1, 'emoji': '📊', 'label': 'Standard', 'matched': 'général'}
 
 def summarize_articles_with_gemini(articles, api_key=GEMINI_API_KEY):
-    """Create ORIGINAL Arabic summaries for stock market articles"""
+    """Create ORIGINAL Arabic summaries for stock market articles with duplicate detection"""
     if not articles:
         return "📭 لا توجد أخبار متعلقة ببورصة الدار البيضاء اليوم."
     
-    # Prepare articles for Gemini with source info
+    # Group articles by company/topic to detect potential duplicates
+    companies_mentioned = {}
+    for i, article in enumerate(articles):
+        title_lower = article['title'].lower()
+        for company in LISTED_COMPANIES:
+            if company in title_lower:
+                if company not in companies_mentioned:
+                    companies_mentioned[company] = []
+                companies_mentioned[company].append((i, article))
+    
+    # Prepare articles for Gemini with source info and duplicate detection
     articles_text = []
     for i, article in enumerate(articles, 1):
         articles_text.append(f"{i}. {article['title']}\nالمصدر: {article['source']}\nالرابط: {article['link']}")
     
+    # Add duplicate information to prompt
+    duplicate_info = ""
+    if companies_mentioned:
+        duplicate_info = "\n\nتنبيه مهم: إذا وجدت مقالين أو أكثر يتحدثان عن نفس الشركة أو الموضوع، يرجى دمجهما في ملخص واحد شامل بدلاً من تكرار المعلومات."
+    
     prompt = f"""أنت محلل مالي خبير في بورصة الدار البيضاء. إليك {len(articles)} مقال متعلق بالبورصة اليوم:
 
-{chr(10).join(articles_text)}
+{chr(10).join(articles_text)}{duplicate_info}
 
 التعليمات الصارمة:
 1. اكتب ملخصاً أصلياً وفريداً لكل مقال باللغة العربية (ليس إعادة صياغة)
-2. ركز فقط على التأثير على البورصة والاستثمارات
-3. جملتان قصيرتان كحد أقصى لكل مقال
-4. استخدم معرفتك المالية لتحليل التأثير المحتمل
-5. اذكر التأثير المحتمل على سعر السهم أو المؤشر
-6. تجنب نسخ المحتوى - أنشئ تحليلاً أصلياً
-7. رتب حسب الأهمية (الأكثر أهمية أولاً)
-8. كن مختصراً ومفيداً
-9. لا تضع روابط في الملخص - سيتم إضافتها تلقائياً
+2. إذا كان هناك مقالان أو أكثر عن نفس الشركة أو الموضوع، ادمجهما في ملخص واحد شامل
+3. ركز فقط على التأثير على البورصة والاستثمارات
+4. جملتان قصيرتان كحد أقصى لكل ملخص (أو ثلاث جمل إذا كان مدموج)
+5. استخدم معرفتك المالية لتحليل التأثير المحتمل
+6. اذكر التأثير المحتمل على سعر السهم أو المؤشر
+7. تجنب نسخ المحتوى - أنشئ تحليلاً أصلياً
+8. رتب حسب الأهمية (الأكثر أهمية أولاً)
+9. كن مختصراً ومفيداً
+10. لا تضع روابط في الملخص - سيتم إضافتها تلقائياً
 
-تنسيق الإجابة لكل مقال:
+تنسيق الإجابة لكل ملخص:
 [الرمز التعبيري] **عنوان قصير (50 حرف كحد أقصى)**
-تحليل أصلي في جملتين كحد أقصى.
+تحليل أصلي في جملتين كحد أقصى (أو ثلاث إذا كان مدموج).
 
-ابدأ مباشرة بالمقالات، بدون مقدمة."""
+ابدأ مباشرة بالملخصات، بدون مقدمة."""
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
@@ -288,7 +397,8 @@ def summarize_articles_with_gemini(articles, api_key=GEMINI_API_KEY):
                     summary_text = ' '.join(current_summary)
                     if not summary_text.endswith('.'):
                         summary_text += '.'
-                    formatted_content += f"‏{summary_text} 📰 [المصدر]({articles[article_index-1]['link']})\n\n"
+                    # Use invisible character to prevent link preview compression
+                    formatted_content += f"‏{summary_text} 📰 ‏[المصدر]({articles[min(article_index-1, len(articles)-1)]['link']})\n\n"
                     current_summary = []
                 
                 # Start new article
@@ -301,7 +411,8 @@ def summarize_articles_with_gemini(articles, api_key=GEMINI_API_KEY):
                     summary_text = ' '.join(current_summary)
                     if not summary_text.endswith('.'):
                         summary_text += '.'
-                    formatted_content += f"‏{summary_text} 📰 [المصدر]({articles[article_index-1]['link']})\n\n"
+                    # Use invisible character to prevent link preview compression
+                    formatted_content += f"‏{summary_text} 📰 ‏[المصدر]({articles[min(article_index-1, len(articles)-1)]['link']})\n\n"
                     current_summary = []
                 
                 # Start new article
@@ -316,7 +427,8 @@ def summarize_articles_with_gemini(articles, api_key=GEMINI_API_KEY):
             summary_text = ' '.join(current_summary)
             if not summary_text.endswith('.'):
                 summary_text += '.'
-            formatted_content += f"‏{summary_text} 📰 [المصدر]({articles[article_index-1]['link']})\n\n"
+            # Use invisible character to prevent link preview compression
+            formatted_content += f"‏{summary_text} 📰 ‏[المصدر]({articles[min(article_index-1, len(articles)-1)]['link']})\n\n"
         
         return formatted_content
         
@@ -344,17 +456,33 @@ def send_to_telegram(text):
         "chat_id": CHAT_ID,
         "text": text,
         "parse_mode": "Markdown",  # Enable markdown for formatting
-        "disable_web_page_preview": True  # This removes the big photo preview
+        "disable_web_page_preview": True,  # Disable link previews to prevent compression
+        "disable_notification": False  # Keep notifications enabled
     }
     
     try:
-        response = requests.post(url, data=payload, timeout=10)
+        response = requests.post(url, data=payload, timeout=15)
         if response.status_code == 200:
             print("✅ Message sent to Telegram successfully!")
             return True
         else:
             print(f"❌ Telegram API error: {response.status_code}")
             print("Response:", response.text)
+            
+            # If markdown fails, try with HTML parse mode
+            if "parse_mode" in str(response.text).lower():
+                print("🔄 Retrying with HTML parse mode...")
+                payload["parse_mode"] = "HTML"
+                # Convert markdown to HTML for links
+                html_text = text.replace("[المصدر]", "<a href='#'>المصدر</a>")
+                html_text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html_text)
+                payload["text"] = html_text
+                
+                response = requests.post(url, data=payload, timeout=15)
+                if response.status_code == 200:
+                    print("✅ Message sent with HTML formatting!")
+                    return True
+            
             return False
     except Exception as e:
         print(f"❌ Error sending to Telegram: {e}")
